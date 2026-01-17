@@ -1,29 +1,35 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="https://abs.twimg.com/responsive-web/client-web-legacy/icon-ios.b1cf6835.png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>青空文庫𝕏</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://abs.twimg.com/responsive-web/client-web-legacy/icon-ios.b1cf6835.png">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <style>
-        :root { --bg-color: #000; --border-color: #2f3336; --text-color: #e7e9ea; --sub-text-color: #71767b; --like-color: #f91880; }
+        :root { --bg-color: #000; --border-color: #2f3336; --text-color: #e7e9ea; --sub-text-color: #71767b; --accent-color: #1d9bf0; --like-color: #f91880; }
         body { font-family: -apple-system, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding-bottom: 60px; }
         header { background: rgba(0,0,0,0.8); backdrop-filter: blur(10px); height: 50px; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 100; font-weight: bold; }
-        #file-selector { padding: 20px; text-align: center; border-bottom: 1px solid var(--border-color); }
         
-        .post { display: flex; padding: 12px 16px; border-bottom: 1px solid var(--border-color); transition: background 0.3s; }
-        .avatar { width: 45px; height: 45px; background: #333; border-radius: 50%; margin-right: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; color: #fff; }
+        #file-selector { padding: 20px; text-align: center; border-bottom: 1px solid var(--border-color); background: #111; }
+        .mode-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; background: #333; color: #fff; margin-bottom: 8px; }
+        
+        .encoding-btn { 
+            background: none; border: 1px solid var(--accent-color); color: var(--accent-color); 
+            padding: 4px 12px; border-radius: 15px; font-size: 12px; cursor: pointer; margin-top: 8px;
+        }
+        .encoding-btn:hover { background: rgba(29, 155, 240, 0.1); }
+
+        .post { display: flex; padding: 12px 16px; border-bottom: 1px solid var(--border-color); }
+        .avatar { width: 45px; height: 45px; background: #333; border-radius: 50%; margin-right: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: bold; }
         .post-content { flex-grow: 1; }
         .post-header { font-size: 15px; margin-bottom: 2px; }
         .author-name { font-weight: bold; }
         .post-text { font-size: 15px; line-height: 1.6; white-space: pre-wrap; margin-bottom: 10px; }
         
         .post-actions { display: flex; justify-content: space-between; max-width: 350px; color: var(--sub-text-color); }
-        .action-btn { cursor: pointer; display: flex; align-items: center; gap: 4px; }
-        .action-btn:hover { color: var(--text-color); }
         .btn-like.active { color: var(--like-color); font-variation-settings: 'FILL' 1; }
         
         ruby rt { font-size: 0.6em; color: var(--sub-text-color); }
@@ -35,12 +41,12 @@
 <header id="header-title">青空文庫𝕏</header>
 
 <div id="file-selector">
-    <input type="file" id="file-input" accept=".txt">
-    <p id="status" style="font-size:12px; color:var(--sub-text-color); margin-top:10px;">作家名がつぶやきます</p>
+    <div id="encoding-display" class="mode-badge">現在のモード: Shift-JIS</div><br>
+    <input type="file" id="file-input" accept=".txt"><br>
+    <button class="encoding-btn" onclick="toggleEncoding()">文字化けしたら押す (UTF-8 ⇄ SJIS)</button>
 </div>
 
 <div id="timeline"></div>
-<div id="load-more-trigger" style="height: 50px;"></div>
 
 <nav class="bottom-nav">
     <span class="material-symbols-outlined">home</span>
@@ -52,34 +58,39 @@
 <script>
 let allChunks = [];
 let currentIndex = 0;
-const displayCount = 15; // 一回に読み込む数
 let authorName = "文豪";
-let currentFile = "";
+let currentFileObject = null;
+let currentEncoding = 'Shift-JIS';
 
 window.onload = function() {
     const fileInput = document.getElementById('file-input');
-    const timeline = document.getElementById('timeline');
 
     fileInput.onchange = function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-        currentFile = file.name;
-
-        const reader = new FileReader();
-        reader.onload = function(event) {
-            const text = event.target.result;
-            setupBook(text);
-        };
-        reader.readAsText(file, 'Shift-JIS');
+        currentFileObject = e.target.files[0];
+        if (!currentFileObject) return;
+        readFile();
     };
 
+    // エンコーディングを切り替えて再読み込み
+    window.toggleEncoding = function() {
+        currentEncoding = (currentEncoding === 'Shift-JIS') ? 'UTF-8' : 'Shift-JIS';
+        document.getElementById('encoding-display').innerText = "現在のモード: " + currentEncoding;
+        if (currentFileObject) readFile();
+    };
+
+    function readFile() {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            setupBook(event.target.result);
+        };
+        reader.readAsText(currentFileObject, currentEncoding);
+    }
+
     function setupBook(text) {
-        // 作家名の抽出（冒頭数行から取得）
         const lines = text.split('\n');
         authorName = lines[1] ? lines[1].trim() : "文豪";
         document.getElementById('header-title').innerText = authorName + "𝕏";
         
-        // 本文のクリーンアップと分割
         let cleanText = text.replace(/［＃.*?］/g, '');
         allChunks = [];
         const chunkSize = 140;
@@ -87,26 +98,22 @@ window.onload = function() {
             allChunks.push(cleanText.substring(i, i + chunkSize));
         }
 
-        currentIndex = 0;
+        const timeline = document.getElementById('timeline');
         timeline.innerHTML = '';
+        currentIndex = 0;
         
-        // しおりの確認
-        const saved = localStorage.getItem('like_index_' + currentFile);
-        if (saved) {
-            currentIndex = Math.max(0, parseInt(saved) - 5); // しおりの少し前から表示
-        }
-
-        loadMore();
+        // しおりの復元（簡易版：初回20件表示）
+        loadMore(20);
     }
 
-    function loadMore() {
-        const end = Math.min(currentIndex + displayCount, allChunks.length);
-        const savedLike = localStorage.getItem('like_index_' + currentFile);
+    function loadMore(count) {
+        const timeline = document.getElementById('timeline');
+        const end = Math.min(currentIndex + count, allChunks.length);
+        const savedLike = localStorage.getItem('like_index_' + (currentFileObject ? currentFileObject.name : ""));
 
         for (let i = currentIndex; i < end; i++) {
             const chunk = processRuby(allChunks[i]);
             const isLiked = (savedLike == i);
-            
             const post = document.createElement('div');
             post.className = 'post';
             post.id = 'post-' + i;
@@ -115,14 +122,14 @@ window.onload = function() {
                 <div class="post-content">
                     <div class="post-header">
                         <span class="author-name">${authorName}</span>
-                        <span style="color:var(--sub-text-color)"> @${currentFile.split('.')[0]} · ${i+1}</span>
+                        <span style="color:var(--sub-text-color)"> @aozora · ${i+1}</span>
                     </div>
                     <div class="post-text">${chunk}</div>
                     <div class="post-actions">
                         <span class="material-symbols-outlined">chat_bubble</span>
                         <span class="material-symbols-outlined">repeat</span>
-                        <div class="action-btn btn-like ${isLiked ? 'active' : ''}" onclick="setLike(${i})">
-                            <span class="material-symbols-outlined">${isLiked ? 'favorite' : 'favorite'}</span>
+                        <div class="btn-like ${isLiked ? 'active' : ''}" onclick="setLike(${i})">
+                            <span class="material-symbols-outlined">favorite</span>
                         </div>
                         <span class="material-symbols-outlined">share</span>
                     </div>
@@ -133,22 +140,16 @@ window.onload = function() {
         currentIndex = end;
     }
 
-    // 無限スクロールの判定
     window.onscroll = function() {
         if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
-            if (currentIndex < allChunks.length) loadMore();
+            if (currentIndex < allChunks.length) loadMore(15);
         }
     };
 
     window.setLike = function(index) {
-        // 前のいいねを消す
+        localStorage.setItem('like_index_' + currentFileObject.name, index);
         document.querySelectorAll('.btn-like').forEach(btn => btn.classList.remove('active'));
-        // 新しいいいねを登録
-        const targetPost = document.getElementById('post-' + index);
-        targetPost.querySelector('.btn-like').classList.add('active');
-        
-        localStorage.setItem('like_index_' + currentFile, index);
-        console.log("しおりを保存しました: " + index);
+        document.getElementById('post-' + index).querySelector('.btn-like').classList.add('active');
     };
 
     function processRuby(text) {
